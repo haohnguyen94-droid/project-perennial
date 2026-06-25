@@ -17,6 +17,8 @@ COMMON_YDL_OPTS = {
     "retries": 2,
     "fragment_retries": 2,
     "sleep_interval_requests": 2,
+    "cookiesfrombrowser": ("firefox",),
+    # "cookiesfrombrowser": ("chrome",), (use this line instead of the one above if you are on chrome)
 }
 
 def get_videos(keyword):
