@@ -214,6 +214,34 @@ def deduplicate(trades: list):
     print(f"[fmp] Deduplication: removed {removed} duplicates → {len(result)} unique")
     return result
 
+def filter_recent(trades: list, years: int = 2):
+    """
+    Filters trades to only include records within the last N years.
+    Keeps signals fresh and relevant for Perennial users.
+    Default: 2 years — enough volume, recent enough to be actionable.
+    """
+    cutoff = datetime.now(timezone.utc).date()
+    cutoff = cutoff.replace(year=cutoff.year - years)
+
+    recent  = []
+    skipped = 0
+
+    for t in trades:
+        try:
+            trade_date = datetime.strptime(
+                t["transaction_date"], "%Y-%m-%d"
+            ).date()
+            if trade_date >= cutoff:
+                recent.append(t)
+            else:
+                skipped += 1
+        except ValueError:
+            skipped += 1
+
+    print(f"[fmp] Date filter ({years}yr window): "
+          f"kept {len(recent)}, removed {skipped} older trades")
+    return recent
+
 # ─────────────────────────────────────────────────────────
 # ANALYZE
 # ─────────────────────────────────────────────────────────
@@ -322,7 +350,10 @@ def run():
 
     # Combine and deduplicate
     all_trades = fmp_trades + sw_trades
-    trades     = deduplicate(all_trades)
+    trades = deduplicate(all_trades)
+
+    # Filter to recent 2 years only
+    trades = filter_recent(trades, years=2)
 
     if not trades:
         print("[fmp] No valid trades. Exiting.")
