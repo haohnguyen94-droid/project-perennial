@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 from yt_dlp.utils import DownloadError
+from utils.youtube_logger import create_logger
 
 ### compute the beginning of last month for video timeframes
 now = datetime.now(timezone.utc)
@@ -30,12 +31,12 @@ COMMON_YDL_OPTS = {
     # "cookiesfrombrowser": ("chrome",), (use this line instead of the one above if you are on chrome)
 }
 
-def get_video_ids_and_metadata(keyword):
+def get_video_ids_and_metadata(keyword, logger):
     """ given a keyword return list of objects from Youtube API that are related to the keyword """
     page_token = None
     results = []
     videoIds = []
-    
+    logger.info("started metadata gathering")
     youtube = googleapiclient.discovery.build(
         "youtube",
         "v3",
@@ -102,6 +103,7 @@ def get_video_ids_and_metadata(keyword):
             "likeCount": int(statistics.get("likeCount",0)),
             "duration": contentDetails.get("duration", "PT0S")
         }
+        logger.info(f"{videoId}: metadata success")
 
     with open("data.json", "w") as f:
         json.dump(results, f, indent = 4)
@@ -150,7 +152,7 @@ def load_json(path, default):
         
         return json.loads(content)
     
-def get_transcripts(videoIds):
+def get_transcripts(videoIds, logger):
     """ 
     function that handles main logic of fetching transcript 
     yt_dlp will get metadata again for transcripts
@@ -175,6 +177,7 @@ def get_transcripts(videoIds):
         id, title = ids[i], titles[i]
         current_status = status[id]
         if current_status == "done" or int(current_status) >= 3:
+            logger.info(f"{id}: skipping, done or tries exceeded")
             continue
  
         url = f"https://www.youtube.com/watch?v={id}"
@@ -182,14 +185,17 @@ def get_transcripts(videoIds):
 
         current_status = int(current_status)
         current_status += 1
+        logger.info(f"{id}: processing, {str(current_status)}/3")
         print(f"Processing ID:{id}, {str(current_status)}/3")
         
         try:
             with yt_dlp.YoutubeDL(COMMON_YDL_OPTS) as ydl:
                 time.sleep(random.uniform(3, 10))
                 info = ydl.extract_info(url, download=False)
+            logger.info(f"{id}: yt_dlp metadata success")
         except Exception as e:
             print(f"{id}: metadata failed: {e}")
+            logger.error(f"{id}: yt_dlp metadata failed")
             status[id] = str(current_status)
             continue
         
@@ -252,17 +258,19 @@ def get_transcripts(videoIds):
             # if call is blocked due to being rate limited, then don't count this try
             if "429" in str(e) or "Too Many Requests" in str(e):
                 print(f"{id}: Rate limited by Youtube API, retrying later")
+                logger.warning(f"{id}: Failed, Rate limited by API, retrying later")
                 continue
             else:
                 print(f"{id}: download failed: {e}")
                 status[id] = str(current_status)
+                logger.error(f"{id}: Failed, download error")
                 continue
         except Exception as e:
             print(f"{id}: unknown exception: {e}")
             status[id] = str(current_status)
+            logger.error(f"{id}: Failed, unknown error: {e}")
             continue
             
-        
         if src_type == "text":
             matches = sorted(glob.glob(f"data/{id}*.vtt"))
             if not matches:
@@ -271,6 +279,7 @@ def get_transcripts(videoIds):
                 continue
             path = matches[0]
             result = parse_vtt(path) if path else None
+            logger.info(f"{id}: Success, yt_dlp downloaded text transcript")
         else:
             matches = sorted(glob.glob(f"data/{id}.*"))
             matches = [
@@ -283,6 +292,7 @@ def get_transcripts(videoIds):
                 continue
             path = matches[0]
             result = transcribe(path) if path else None
+            logger.info(f"{id}: Success, yt_dlp downloaded video audio and was transcibed")
 
         transcripts[id] = {
             "title": title,
@@ -291,6 +301,7 @@ def get_transcripts(videoIds):
         }
         status[id] = "done"
         os.remove(path)
+        logger.info(f"{id}: Done")
 
     update_status(status)
     with open("transcripts.json", "w") as f:
@@ -326,8 +337,9 @@ def update_status(states):
 
 def main():
     keyword = "Palantir"
-    videoIds = get_video_ids_and_metadata(keyword)
-    get_transcripts(videoIds)
+    logger = create_logger(keyword+".log")
+    videoIds = get_video_ids_and_metadata(keyword, logger)
+    get_transcripts(videoIds, logger)
 
     return
 
