@@ -8,6 +8,16 @@ import time
 import random
 import re
 from dotenv import load_dotenv
+from datetime import datetime, timezone
+from dateutil.relativedelta import relativedelta
+from yt_dlp.utils import DownloadError
+
+### compute the beginning of last month for video timeframes
+now = datetime.now(timezone.utc)
+published_after = (
+    now.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - relativedelta(months=1)
+).strftime("%Y-%m-%dT%H:%M:%SZ")
+###
 
 load_dotenv()
 
@@ -17,14 +27,14 @@ COMMON_YDL_OPTS = {
     "retries": 2,
     "fragment_retries": 2,
     "sleep_interval_requests": 2,
-    "cookiesfrombrowser": ("firefox",),
     # "cookiesfrombrowser": ("chrome",), (use this line instead of the one above if you are on chrome)
 }
 
-def get_videos(keyword):
+def get_video_ids_and_metadata(keyword):
     """ given a keyword return list of objects from Youtube API that are related to the keyword """
     page_token = None
     results = []
+    videoIds = []
     
     youtube = googleapiclient.discovery.build(
         "youtube",
@@ -36,21 +46,67 @@ def get_videos(keyword):
         request = youtube.search().list(
             part="snippet",
             maxResults=50,
+            order="date",
+            publishedAfter=published_after,
             q=keyword,
             type="video",
-            fields="nextPageToken, items(id/videoId,snippet/title,snippet/channelTitle)",
+            fields="nextPageToken, items(id/videoId)",
             pageToken=page_token
         )
         response = request.execute()
-        results.extend(response["items"])
+        results.extend(response.get("items",[]))
 
         page_token = response.get("nextPageToken")
 
         if not page_token:
             break
 
+    for item in results:
+        videoIds.append(item["id"]["videoId"])
+        
+    # get metadata from video IDs above
+    metadata = load_json("metadata.json", {}) # dictionary with previously fetched metadata
+        
+    details: dict[str, dict] = {}
+    for i in range(0, len(videoIds), 50):
+        batchIds = videoIds[i:i+50]
+        request = youtube.videos().list(
+            part="statistics,snippet,contentDetails",
+            fields="items(id,snippet/title,snippet/channelTitle,snippet/publishedAt,snippet/tags,statistics/viewCount,statistics/likeCount,contentDetails/duration)",
+            id = ",".join(batchIds)
+        )
+        response = request.execute()
+
+        for item in response.get("items",[]):
+            details[item['id']] = item
+
+    for videoId in videoIds:
+        if videoId in metadata:
+            continue
+
+        item = details.get(videoId)
+        # if video is removed between execution
+        if item is None:
+            continue
+
+        snippet = item.get("snippet", {})
+        statistics = item.get("statistics", {})
+        contentDetails = item.get("contentDetails", {})
+
+        metadata[videoId]={
+            "title": snippet.get("title"),
+            "channel": snippet.get("channelTitle"),
+            "publishedDate": snippet.get("publishedAt"),
+            "tags": snippet.get("tags",[]),
+            "viewCount": int(statistics.get("viewCount",0)),
+            "likeCount": int(statistics.get("likeCount",0)),
+            "duration": contentDetails.get("duration", "PT0S")
+        }
+
     with open("data.json", "w") as f:
         json.dump(results, f, indent = 4)
+
+    return videoIds
 
 def parse_vtt(path):
     """ function to parse the transcript files returned by yt-dlp """
@@ -66,50 +122,67 @@ def parse_vtt(path):
             text.append(line)
     return " ".join(text)
 
-model = WhisperModel("tiny")
+# initialize whisper model for audio transcription
+model = WhisperModel(
+    "tiny",
+    device="cpu",
+    compute_type="int8"
+)
+
 def transcribe(audio_path):
     """ uses whisper model to turn audio to text when no transcripts are available """
     segments, _ = model.transcribe(audio_path)
     return " ".join(seg.text for seg in segments)
 
 def load_json(path, default):
+    """helper function to load json files"""
+
+    #if filepath is bad return default
     if not os.path.exists(path):
         return default
 
     with open(path, "r") as f:
-        return json.load(f)
+        content = f.read().strip()
+
+        #if jsono is empty return default
+        if not content:
+            return default
+        
+        return json.loads(content)
     
-def get_transcripts():
-    """ function that handles main logic of determining transcript source """
-    data = load_json("data.json", [])
+def get_transcripts(videoIds):
+    """ 
+    function that handles main logic of fetching transcript 
+    yt_dlp will get metadata again for transcripts
+    yt_dlp API call is more expensive than bulk batching 50 youtube API calls
+    therefore do any filtering of videos before calling this function
+    this function should only be called on videoIDs we care about to save bandwidth
+    """
+    data = load_json("metadata.json", {})
     transcripts = load_json("transcripts.json", {})
     os.makedirs("data", exist_ok=True)
 
-    ids = [
-        video["id"]["videoId"]
-        for video in data
-        if video.get("id", {}).get("videoId")
-    ]
-    titles = [
-        video["snippet"]["title"]
-        for video in data
-        if video.get("id", {}).get("videoId")
-    ]
+    ids, titles = [], []
 
-    cache = check_cache(ids)
+    for id in videoIds:
+        ids.append(id)
+        titles.append(data[id]["title"])
 
+    status = check_status(ids)
+
+    # array slicing here for testing purposes, remove the slice operator during launch
     for i in range(len(ids[:5])):
         id, title = ids[i], titles[i]
-        status = cache[id]
-        if status == "done" or int(status) >= 3:
+        current_status = status[id]
+        if current_status == "done" or int(current_status) >= 3:
             continue
  
         url = f"https://www.youtube.com/watch?v={id}"
         result = None
 
-        status = int(status)
-        status += 1
-        print(f"Processing ID:{id}, {str(status)}/3")
+        current_status = int(current_status)
+        current_status += 1
+        print(f"Processing ID:{id}, {str(current_status)}/3")
         
         try:
             with yt_dlp.YoutubeDL(COMMON_YDL_OPTS) as ydl:
@@ -117,7 +190,7 @@ def get_transcripts():
                 info = ydl.extract_info(url, download=False)
         except Exception as e:
             print(f"{id}: metadata failed: {e}")
-            cache[id] = str(status)
+            status[id] = str(current_status)
             continue
         
         opts = None
@@ -135,6 +208,7 @@ def get_transcripts():
             None
         )
 
+        # search parameters for yt_dlp to try and get any transcripts from youtube API
         if english_manual:
             opts = {
                 **COMMON_YDL_OPTS,
@@ -174,16 +248,26 @@ def get_transcripts():
             time.sleep(random.uniform(5, 15))
             ydl = yt_dlp.YoutubeDL(opts)
             ydl.download([url])
+        except DownloadError as e:
+            # if call is blocked due to being rate limited, then don't count this try
+            if "429" in str(e) or "Too Many Requests" in str(e):
+                print(f"{id}: Rate limited by Youtube API, retrying later")
+                continue
+            else:
+                print(f"{id}: download failed: {e}")
+                status[id] = str(current_status)
+                continue
         except Exception as e:
-            print(f"{id}: download failed: {e}")
-            cache[id] = str(status)
+            print(f"{id}: unknown exception: {e}")
+            status[id] = str(current_status)
             continue
+            
         
         if src_type == "text":
             matches = sorted(glob.glob(f"data/{id}*.vtt"))
             if not matches:
                 print(f"{id}: no matches found")
-                cache[id] = str(status)
+                status[id] = str(current_status)
                 continue
             path = matches[0]
             result = parse_vtt(path) if path else None
@@ -195,7 +279,7 @@ def get_transcripts():
             ]
             if not matches:
                 print(f"{id}: no matches found")
-                cache[id] = str(status)
+                status[id] = str(current_status)
                 continue
             path = matches[0]
             result = transcribe(path) if path else None
@@ -205,17 +289,17 @@ def get_transcripts():
             "source": src_type,
             "transcript": result
         }
-        cache[id] = "done"
+        status[id] = "done"
         os.remove(path)
 
-    update_cache(cache)
+    update_status(status)
     with open("transcripts.json", "w") as f:
         json.dump(transcripts, f, indent = 4)
 
-def check_cache(video_ids):
-    """ returns cache state for each video ID to prevent unnecessary work """
+def check_status(video_ids):
+    """ returns status state for each video ID to prevent unnecessary work """
 
-    #TODO: this function works together with update_cache and is currently being saved and fetched via JSON
+    #TODO: this function works together with update_status and is currently being saved and fetched via JSON
     #      in the future probably migrate to a SQL or some other database
 
     results = {}
@@ -226,22 +310,24 @@ def check_cache(video_ids):
 
     return results
 
-def update_cache(states):
-    """ stores cache state for each video ID to prevent unnecessary work """
+def update_status(states):
+    """ stores status state for each video ID to prevent unnecessary work """
 
-    #TODO: this function works together with check_cache and is currently being saved and fetched via JSON
+    #TODO: this function works together with check_status and is currently being saved and fetched via JSON
     #      in the future probably migrate to a SQL or some other database
-    cache = load_json("cache.json", {})
+    status = load_json("status.json", {})
     
     for state in states.keys():
-        if state not in cache.keys() or cache[state] != states[state]:
-            cache[state] = states[state]
+        if state not in status.keys() or status[state] != states[state]:
+            status[state] = states[state]
     
-    with open("cache.json", "w") as f:
-        json.dump(cache, f, indent = 4)
+    with open("status.json", "w") as f:
+        json.dump(status, f, indent = 4)
 
 def main():
-    get_transcripts()
+    keyword = "Palantir"
+    videoIds = get_video_ids_and_metadata(keyword)
+    get_transcripts(videoIds)
 
     return
 
