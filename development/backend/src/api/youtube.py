@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 from yt_dlp.utils import DownloadError
 from src.utils.youtube_logger import create_logger
+from collections import deque
 
 ### compute the beginning of last month for video timeframes
 now = datetime.now(timezone.utc)
@@ -164,77 +165,89 @@ def get_transcripts(videoIds, logger):
     transcripts = load_json("transcripts.json", {})
     os.makedirs("data", exist_ok=True)
 
-    ids, titles = [], []
+    ids = deque()
+    transcript_metadata = {}
+    status = check_status(videoIds)
 
-    for id in videoIds:
+    # loop to fetch transcript metadata
+    logger.info("Starting transcript metadata gathering")
+    for i, id in enumerate(videoIds):
         ids.append(id)
-        titles.append(data[id]["title"])
-
-    status = check_status(ids)
-
-    # array slicing here for testing purposes, remove the slice operator during launch
-    for i in range(len(ids)):
-        id, title = ids[i], titles[i]
-        current_status = status[id]
-        if current_status == "done" or int(current_status) >= 3:
-            logger.info(f"{id}: skipping, done or tries exceeded")
-            continue
- 
         url = f"https://www.youtube.com/watch?v={id}"
         result = None
+        current_status = status[id]
+        if current_status == "done" or int(current_status) >= 3:
+            logger.info(f"{id}: skipping metadata, done or tries exceeded")
+            continue
 
         current_status = int(current_status)
         current_status += 1
-        logger.info(f"{id}: processing, {str(current_status)}/3")
-        print(f"Processing ID:{id}, {str(current_status)}/3")
-        
+        logger.info(f"{id}: processing metadata")
+        print(f"Processing metadata {i+1}/{len(videoIds)}")
+
+        # retrieve transcript metadata
         try:
             with yt_dlp.YoutubeDL(COMMON_YDL_OPTS) as ydl:
                 time.sleep(random.uniform(3, 10))
                 info = ydl.extract_info(url, download=False)
             logger.info(f"{id}: yt_dlp metadata success")
         except Exception as e:
-            print(f"{id}: metadata failed: {e}")
             logger.error(f"{id}: yt_dlp metadata failed")
             status[id] = str(current_status)
+            ids.pop()
             continue
         
-        opts = None
-        src_type = None
-
         manual = info.get("subtitles", {})
         english_manual = next(
             (lang for lang in manual if lang.lower().startswith("en")),
             None
         )
-
         automatic = info.get("automatic_captions", {})
         english_automatic = next(
             (lang for lang in automatic if lang.lower().startswith("en")),
             None
         )
-
-        # search parameters for yt_dlp to try and get any transcripts from youtube API
         if english_manual:
+            transcript_metadata[id] = ("manual", english_manual)
+        elif english_automatic:
+            transcript_metadata[id] = ("automatic", english_automatic)
+        else:
+            transcript_metadata[id] = ("audio")
+
+    # loop to fetch transcripts
+    logger.info("Starting transcript gathering")
+    while ids:
+        id = ids.popleft()
+        current_status = status[id]
+        if current_status == "done" or int(current_status) >= 3:
+            logger.info(f"{id}: skipping transcript, done or tries exceeded")
+            continue
+
+        title = data[id]["title"]
+        opts = None
+        src_type = None
+
+        # parameters for yt_dlp to try and get any transcripts from youtube API
+        if transcript_metadata[id][0] == manual:
             opts = {
                 **COMMON_YDL_OPTS,
                 "skip_download": True,
                 "subtitlesformat": "vtt",
                 "writesubtitles": True,
                 "writeautomaticsub": False,
-                "subtitleslangs": [english_manual],
+                "subtitleslangs": [transcript_metadata[id][1]],
                 "outtmpl": f"data/{id}.%(ext)s",
                 "quiet": True,
             }
             src_type = "text"
-        elif english_automatic:
+        elif transcript_metadata[id][0] == english_automatic:
             opts = {
                 **COMMON_YDL_OPTS,
                 "skip_download": True,
                 "subtitlesformat": "vtt",
                 "writesubtitles": False,
                 "writeautomaticsub": True,
-                "subtitleslangs": [english_automatic],
+                "subtitleslangs": [transcript_metadata[id][1]],
                 "outtmpl": f"data/{id}.%(ext)s",
                 "quiet": True,
             }
@@ -257,16 +270,14 @@ def get_transcripts(videoIds, logger):
         except DownloadError as e:
             # if call is blocked due to being rate limited, then don't count this try
             if "429" in str(e) or "Too Many Requests" in str(e):
-                print(f"{id}: Rate limited by Youtube API, retrying later")
                 logger.warning(f"{id}: Failed, Rate limited by API, retrying later")
+                ids.append(id)
                 continue
             else:
-                print(f"{id}: download failed: {e}")
                 status[id] = str(current_status)
                 logger.error(f"{id}: Failed, download error")
                 continue
         except Exception as e:
-            print(f"{id}: unknown exception: {e}")
             status[id] = str(current_status)
             logger.error(f"{id}: Failed, unknown error: {e}")
             continue
@@ -274,7 +285,7 @@ def get_transcripts(videoIds, logger):
         if src_type == "text":
             matches = sorted(glob.glob(f"data/{id}*.vtt"))
             if not matches:
-                print(f"{id}: no matches found")
+                logger.error(f"{id}: No text matches found")
                 status[id] = str(current_status)
                 continue
             path = matches[0]
@@ -287,7 +298,7 @@ def get_transcripts(videoIds, logger):
                 if path.endswith((".mp3", ".m4a", ".webm", ".opus", ".wav"))
             ]
             if not matches:
-                print(f"{id}: no matches found")
+                logger.error(f"{id}: No audio matches found")
                 status[id] = str(current_status)
                 continue
             path = matches[0]
@@ -314,7 +325,7 @@ def check_status(video_ids):
     #      in the future probably migrate to a SQL or some other database
 
     results = {}
-    cache = load_json("cache.json", {})
+    cache = load_json("status.json", {})
         
     for id in video_ids:
         results[id] = cache.get(id, "0")
