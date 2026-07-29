@@ -32,8 +32,9 @@ dist/
 
 # Local project data
 data/
-cache.json
+metadata.json
 transcripts.json
+status.json
 
 # Logs
 *.log
