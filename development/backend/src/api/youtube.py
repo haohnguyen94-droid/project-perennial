@@ -228,7 +228,7 @@ def get_transcripts(videoIds, logger):
         src_type = None
 
         # parameters for yt_dlp to try and get any transcripts from youtube API
-        if transcript_metadata[id][0] == manual:
+        if transcript_metadata[id][0] == "manual":
             opts = {
                 **COMMON_YDL_OPTS,
                 "skip_download": True,
@@ -240,7 +240,7 @@ def get_transcripts(videoIds, logger):
                 "quiet": True,
             }
             src_type = "text"
-        elif transcript_metadata[id][0] == english_automatic:
+        elif transcript_metadata[id][0] == "automatic":
             opts = {
                 **COMMON_YDL_OPTS,
                 "skip_download": True,
