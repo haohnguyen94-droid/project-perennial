@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 from yt_dlp.utils import DownloadError
-from utils.youtube_logger import create_logger
+from src.utils.youtube_logger import create_logger
 
 ### compute the beginning of last month for video timeframes
 now = datetime.now(timezone.utc)
@@ -105,8 +105,8 @@ def get_video_ids_and_metadata(keyword, logger):
         }
         logger.info(f"{videoId}: metadata success")
 
-    with open("data.json", "w") as f:
-        json.dump(results, f, indent = 4)
+    with open("metadata.json", "w") as f:
+        json.dump(metadata, f, indent = 4)
 
     return videoIds
 
@@ -173,7 +173,7 @@ def get_transcripts(videoIds, logger):
     status = check_status(ids)
 
     # array slicing here for testing purposes, remove the slice operator during launch
-    for i in range(len(ids[:5])):
+    for i in range(len(ids)):
         id, title = ids[i], titles[i]
         current_status = status[id]
         if current_status == "done" or int(current_status) >= 3:
