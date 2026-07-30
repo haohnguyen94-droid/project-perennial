@@ -172,16 +172,13 @@ def get_transcripts(videoIds, logger):
     # loop to fetch transcript metadata
     logger.info("Starting transcript metadata gathering")
     for i, id in enumerate(videoIds):
-        ids.append(id)
         url = f"https://www.youtube.com/watch?v={id}"
         result = None
         current_status = status[id]
-        if current_status == "done" or int(current_status) >= 3:
+        if current_status == "done" or int(current_status) >= 5:
             logger.info(f"{id}: skipping metadata, done or tries exceeded")
             continue
 
-        current_status = int(current_status)
-        current_status += 1
         logger.info(f"{id}: processing metadata")
         print(f"Processing metadata {i+1}/{len(videoIds)}")
 
@@ -193,8 +190,6 @@ def get_transcripts(videoIds, logger):
             logger.info(f"{id}: yt_dlp metadata success")
         except Exception as e:
             logger.error(f"{id}: yt_dlp metadata failed")
-            status[id] = str(current_status)
-            ids.pop()
             continue
         
         manual = info.get("subtitles", {})
@@ -212,18 +207,25 @@ def get_transcripts(videoIds, logger):
         elif english_automatic:
             transcript_metadata[id] = ("automatic", english_automatic)
         else:
-            transcript_metadata[id] = ("audio")
+            transcript_metadata[id] = ("audio", None)
+        ids.append(id)
+            
 
     # loop to fetch transcripts
     logger.info("Starting transcript gathering")
     while ids:
         id = ids.popleft()
         current_status = status[id]
-        if current_status == "done" or int(current_status) >= 3:
+        
+        url = f"https://www.youtube.com/watch?v={id}"
+        if current_status == "done" or int(current_status) >= 5:
             logger.info(f"{id}: skipping transcript, done or tries exceeded")
             continue
 
-        title = data[id]["title"]
+        current_status = int(current_status) + 1
+        status[id] = str(current_status)
+        update_status(status)
+        title = data.get(id,{}).get("title", "")
         opts = None
         src_type = None
 
@@ -262,23 +264,26 @@ def get_transcripts(videoIds, logger):
                 "max_sleep_interval": 30,
             }
             src_type = "audio"
+
+        for old_path in glob.glob(f"data/{id}*"):
+            try:
+                os.remove(old_path)
+            except OSError:
+                logger.warning(f"{id}: could not remove stale file {old_path}")
         
         try:
             time.sleep(random.uniform(5, 15))
-            ydl = yt_dlp.YoutubeDL(opts)
-            ydl.download([url])
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
         except DownloadError as e:
-            # if call is blocked due to being rate limited, then don't count this try
             if "429" in str(e) or "Too Many Requests" in str(e):
                 logger.warning(f"{id}: Failed, Rate limited by API, retrying later")
                 ids.append(id)
                 continue
             else:
-                status[id] = str(current_status)
                 logger.error(f"{id}: Failed, download error")
                 continue
         except Exception as e:
-            status[id] = str(current_status)
             logger.error(f"{id}: Failed, unknown error: {e}")
             continue
             
@@ -286,7 +291,6 @@ def get_transcripts(videoIds, logger):
             matches = sorted(glob.glob(f"data/{id}*.vtt"))
             if not matches:
                 logger.error(f"{id}: No text matches found")
-                status[id] = str(current_status)
                 continue
             path = matches[0]
             result = parse_vtt(path) if path else None
@@ -299,7 +303,6 @@ def get_transcripts(videoIds, logger):
             ]
             if not matches:
                 logger.error(f"{id}: No audio matches found")
-                status[id] = str(current_status)
                 continue
             path = matches[0]
             result = transcribe(path) if path else None
@@ -314,9 +317,9 @@ def get_transcripts(videoIds, logger):
         os.remove(path)
         logger.info(f"{id}: Done")
 
-    update_status(status)
-    with open("transcripts.json", "w") as f:
-        json.dump(transcripts, f, indent = 4)
+        update_status(status)
+        with open("transcripts.json", "w") as f:
+            json.dump(transcripts, f, indent = 4, ensure_ascii=False)
 
 def check_status(video_ids):
     """ returns status state for each video ID to prevent unnecessary work """
