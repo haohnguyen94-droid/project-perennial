@@ -13,6 +13,14 @@ from dateutil.relativedelta import relativedelta
 from yt_dlp.utils import DownloadError
 from src.utils.youtube_logger import create_logger
 from collections import deque
+from pathlib import Path
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+DATA_DIR = BACKEND_DIR/"data"
+DATA_DIR.mkdir(exist_ok=True)
+METADATA_FILE = DATA_DIR/"metadata.json"
+TRANSCRIPTS_FILE = DATA_DIR/"transcripts.json"
+STATUS_FILE = DATA_DIR/"status.json"
 
 ### compute the beginning of last month for video timeframes
 now = datetime.now(timezone.utc)
@@ -67,7 +75,7 @@ def get_video_ids_and_metadata(keyword, logger):
         videoIds.append(item["id"]["videoId"])
         
     # get metadata from video IDs above
-    metadata = load_json("metadata.json", {}) # dictionary with previously fetched metadata
+    metadata = load_json(METADATA_FILE, {}) # dictionary with previously fetched metadata
         
     details: dict[str, dict] = {}
     for i in range(0, len(videoIds), 50):
@@ -106,7 +114,7 @@ def get_video_ids_and_metadata(keyword, logger):
         }
         logger.info(f"{videoId}: metadata success")
 
-    with open("metadata.json", "w") as f:
+    with open(METADATA_FILE, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent = 4)
 
     return videoIds
@@ -144,10 +152,10 @@ def load_json(path, default):
     if not os.path.exists(path):
         return default
 
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         content = f.read().strip()
 
-        #if jsono is empty return default
+        #if json is empty return default
         if not content:
             return default
         
@@ -161,8 +169,8 @@ def get_transcripts(videoIds, logger):
     therefore do any filtering of videos before calling this function
     this function should only be called on videoIDs we care about to save bandwidth
     """
-    data = load_json("metadata.json", {})
-    transcripts = load_json("transcripts.json", {})
+    data = load_json(METADATA_FILE, {})
+    transcripts = load_json(TRANSCRIPTS_FILE, {})
     os.makedirs("data", exist_ok=True)
 
     ids = deque()
@@ -318,7 +326,7 @@ def get_transcripts(videoIds, logger):
         logger.info(f"{id}: Done")
 
         update_status(status)
-        with open("transcripts.json", "w") as f:
+        with open(TRANSCRIPTS_FILE, "w", encoding="utf-8") as f:
             json.dump(transcripts, f, indent = 4, ensure_ascii=False)
 
 def check_status(video_ids):
@@ -328,7 +336,7 @@ def check_status(video_ids):
     #      in the future probably migrate to a SQL or some other database
 
     results = {}
-    cache = load_json("status.json", {})
+    cache = load_json(STATUS_FILE, {})
         
     for id in video_ids:
         results[id] = cache.get(id, "0")
@@ -340,13 +348,13 @@ def update_status(states):
 
     #TODO: this function works together with check_status and is currently being saved and fetched via JSON
     #      in the future probably migrate to a SQL or some other database
-    status = load_json("status.json", {})
+    status = load_json(STATUS_FILE, {})
     
     for state in states.keys():
         if state not in status.keys() or status[state] != states[state]:
             status[state] = states[state]
     
-    with open("status.json", "w") as f:
+    with open(STATUS_FILE, "w", encoding="utf-8") as f:
         json.dump(status, f, indent = 4)
 
 def main():
