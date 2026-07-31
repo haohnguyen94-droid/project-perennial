@@ -6,12 +6,16 @@
    - in cmd run `winget install DenoLand.Deno` and verify with `deno --version`
    - in cmd run `winget install Gyan.FFmpeg` and verify with `ffmpeg -version`
 
+## Use
+
+Run the command python -m <relative path form current directory>.youtube "<search term>"
+
 ## Outputs
 
 After you run youtube.py some new files should be created:
 
-- cache.json - holds the status states of each video id. The states can be: Done, 1-3 for a maximum of 3 retries per ID before we abandon
-- data.json - this holds a list of all video IDs along with the video title and which channel the video came from
+- status.json - holds the status states of each video id. The states can be: Done, 1-3 for a maximum of 3 retries per ID before we abandon
+- metadata.json - this holds a list of all video IDs along with the video title and which channel the video came from
 - transcripts.json - this holds the actual transcript of each fetched video if it was successful or a None object if unsuccessful
 
 ## TODOs

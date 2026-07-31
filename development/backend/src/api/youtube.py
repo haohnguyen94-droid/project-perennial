@@ -14,6 +14,7 @@ from yt_dlp.utils import DownloadError
 from src.utils.youtube_logger import create_logger
 from collections import deque
 from pathlib import Path
+import argparse
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = BACKEND_DIR/"data"
@@ -358,9 +359,19 @@ def update_status(states):
         json.dump(status, f, indent = 4)
 
 def main():
-    keyword = "Palantir"
+    parser = argparse.ArgumentParser(
+        description="Download YouTube transcripts given keyword."
+    )
+    parser.add_argument(
+        "keyword",
+        help="Keyword to search for"
+    )
+    args = parser.parse_args()
+    keyword = f'{args.keyword}'
+    print(f"Searching for: {keyword}")
+  
     logger = create_logger(keyword+".log")
-    videoIds = get_video_ids_and_metadata(keyword, logger)
+    videoIds = get_video_ids_and_metadata(f'"{keyword}"', logger)
     get_transcripts(videoIds, logger)
 
     return
