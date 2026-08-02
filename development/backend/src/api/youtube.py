@@ -281,7 +281,7 @@ def get_transcripts(videoIds, logger):
                 logger.warning(f"{id}: could not remove stale file {old_path}")
         
         try:
-            time.sleep(random.uniform(5, 15))
+            time.sleep(random.uniform(2+(4*int(current_status)), 5+(4*int(current_status))))
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
         except DownloadError as e:
