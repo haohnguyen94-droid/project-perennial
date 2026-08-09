@@ -20,7 +20,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = BACKEND_DIR/"data"
 DATA_DIR.mkdir(exist_ok=True)
 METADATA_FILE = DATA_DIR/"metadata.json"
-TRANSCRIPTS_FILE = DATA_DIR/"transcripts.json"
+TRANSCRIPT_URLS_FILE = DATA_DIR/"transcript_urls.json"
 STATUS_FILE = DATA_DIR/"status.json"
 
 ### compute the beginning of last month for video timeframes
@@ -33,13 +33,18 @@ published_after = (
 load_dotenv()
 
 # main options for YT-DLP calls attached to other options in get_transcripts
-COMMON_YDL_OPTS = {
+YDL_OPTS = {
     "quiet": True,
     "retries": 2,
     "fragment_retries": 2,
     "sleep_interval_requests": 2,
+    "skip_download": True,
+    "subtitlesformat": "vtt",
+    "quiet": True,
+    "proxy": "http://127.0.0.1:8080",
     # "cookiesfrombrowser": ("chrome",), (use this line instead of the one above if you are on chrome)
 }
+
 
 def get_video_ids_and_metadata(keyword, logger):
     """ given a keyword return list of objects from Youtube API that are related to the keyword """
@@ -171,119 +176,35 @@ def get_transcripts(videoIds, logger):
     this function should only be called on videoIDs we care about to save bandwidth
     """
     data = load_json(METADATA_FILE, {})
-    transcripts = load_json(TRANSCRIPTS_FILE, {})
+    transcript_urls = load_json(TRANSCRIPT_URLS_FILE, {})
     os.makedirs("data", exist_ok=True)
 
-    ids = deque()
-    transcript_metadata = {}
+    ids = deque(videoIds)
     status = check_status(videoIds)
+    count = 0
+            
+    while ids:
+        id = ids.popleft()
+        print(f"\rGetting urls: {count}/{len(videoIds)}", end="", flush=True)
 
-    # loop to fetch transcript metadata
-    logger.info("Starting transcript metadata gathering")
-    for i, id in enumerate(videoIds):
-        url = f"https://www.youtube.com/watch?v={id}"
-        result = None
         current_status = status[id]
         if current_status == "done" or int(current_status) >= 5:
             logger.info(f"{id}: skipping metadata, done or tries exceeded")
-            continue
-
-        logger.info(f"{id}: processing metadata")
-        print(f"Processing metadata {i+1}/{len(videoIds)}")
-
-        # retrieve transcript metadata
-        try:
-            with yt_dlp.YoutubeDL(COMMON_YDL_OPTS) as ydl:
-                time.sleep(random.uniform(3, 10))
-                info = ydl.extract_info(url, download=False)
-            logger.info(f"{id}: yt_dlp metadata success")
-        except Exception as e:
-            logger.error(f"{id}: yt_dlp metadata failed")
+            count += 1
             continue
         
-        manual = info.get("subtitles", {})
-        english_manual = next(
-            (lang for lang in manual if lang.lower().startswith("en")),
-            None
-        )
-        automatic = info.get("automatic_captions", {})
-        english_automatic = next(
-            (lang for lang in automatic if lang.lower().startswith("en")),
-            None
-        )
-        if english_manual:
-            transcript_metadata[id] = ("manual", english_manual)
-        elif english_automatic:
-            transcript_metadata[id] = ("automatic", english_automatic)
-        else:
-            transcript_metadata[id] = ("audio", None)
-        ids.append(id)
-            
-
-    # loop to fetch transcripts
-    logger.info("Starting transcript gathering")
-    while ids:
-        id = ids.popleft()
-        current_status = status[id]
-        
-        url = f"https://www.youtube.com/watch?v={id}"
-        if current_status == "done" or int(current_status) >= 5:
-            logger.info(f"{id}: skipping transcript, done or tries exceeded")
-            continue
-
         current_status = int(current_status) + 1
         status[id] = str(current_status)
         update_status(status)
-        title = data.get(id,{}).get("title", "")
-        opts = None
-        src_type = None
 
-        # parameters for yt_dlp to try and get any transcripts from youtube API
-        if transcript_metadata[id][0] == "manual":
-            opts = {
-                **COMMON_YDL_OPTS,
-                "skip_download": True,
-                "subtitlesformat": "vtt",
-                "writesubtitles": True,
-                "writeautomaticsub": False,
-                "subtitleslangs": [transcript_metadata[id][1]],
-                "outtmpl": f"data/{id}.%(ext)s",
-                "quiet": True,
-            }
-            src_type = "text"
-        elif transcript_metadata[id][0] == "automatic":
-            opts = {
-                **COMMON_YDL_OPTS,
-                "skip_download": True,
-                "subtitlesformat": "vtt",
-                "writesubtitles": False,
-                "writeautomaticsub": True,
-                "subtitleslangs": [transcript_metadata[id][1]],
-                "outtmpl": f"data/{id}.%(ext)s",
-                "quiet": True,
-            }
-            src_type = "text"
-        else:
-            opts = {
-                **COMMON_YDL_OPTS,
-                "format": "bestaudio/best",
-                "outtmpl": "data/%(id)s.%(ext)s",
-                "quiet": True,
-                "sleep_interval": 10,
-                "max_sleep_interval": 30,
-            }
-            src_type = "audio"
+        url = f"https://www.youtube.com/watch?v={id}"
+        current_status = status[id]
 
-        for old_path in glob.glob(f"data/{id}*"):
-            try:
-                os.remove(old_path)
-            except OSError:
-                logger.warning(f"{id}: could not remove stale file {old_path}")
-        
+
         try:
             time.sleep(random.uniform(2+(4*int(current_status)), 5+(4*int(current_status))))
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([url])
+            with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
+                info = ydl.extract_info(url, download=False)
         except DownloadError as e:
             if "429" in str(e) or "Too Many Requests" in str(e):
                 logger.warning(f"{id}: Failed, Rate limited by API, retrying later")
@@ -295,40 +216,86 @@ def get_transcripts(videoIds, logger):
         except Exception as e:
             logger.error(f"{id}: Failed, unknown error: {e}")
             continue
+
+        manual = info.get("subtitles", {})
+        english_manual = next(
+            (lang for lang in manual if lang.lower().startswith("en")),
+            None
+        )
+        automatic = info.get("automatic_captions", {})
+        english_automatic = next(
+            (lang for lang in automatic if lang.lower().startswith("en")),
+            None
+        )
+
+        src_type = None
+        lang = None
+        if english_manual:
+            src_type = "text"
+            lang = english_manual
+        elif english_automatic:
+            src_type = "text"
+            lang = english_automatic
+        else:
+            src_type = "audio"
+
+
+        title = data.get(id,{}).get("title", "")
             
         if src_type == "text":
-            matches = sorted(glob.glob(f"data/{id}*.vtt"))
-            if not matches:
-                logger.error(f"{id}: No text matches found")
-                continue
-            path = matches[0]
-            result = parse_vtt(path) if path else None
-            logger.info(f"{id}: Success, yt_dlp downloaded text transcript")
-        else:
-            matches = sorted(glob.glob(f"data/{id}.*"))
-            matches = [
-                path for path in matches
-                if path.endswith((".mp3", ".m4a", ".webm", ".opus", ".wav"))
-            ]
-            if not matches:
-                logger.error(f"{id}: No audio matches found")
-                continue
-            path = matches[0]
-            result = transcribe(path) if path else None
-            logger.info(f"{id}: Success, yt_dlp downloaded video audio and was transcibed")
+            english_tracks = None
 
-        transcripts[id] = {
-            "title": title,
-            "source": src_type,
-            "transcript": result
-        }
+            english_tracks = info.get("subtitles", {}).get(lang, [])
+            if not english_tracks:
+                english_tracks = info.get("automatic_captions",{}).get(lang, [])
+
+            track = next((t for t in english_tracks if t.get("ext") == "vtt"), None)
+
+            if track:
+                transcript_urls[id] = {
+                    "url": track["url"],
+                    "headers": track.get("http_headers", {}),
+                    "title": title,
+                    "type": "text",
+                }
+                logger.info(f"{id}: Success, yt_dlp returned transcript url")
+            else:
+                logger.error(f"{id}: Failed, to get caption url")
+                continue
+        else:
+            formats = info.get("formats", [])
+            if not formats:
+                logger.error(f"{id}: Failed, no formats found")
+                continue
+
+            audio_formats = [
+                fmt
+                for fmt in formats
+                if fmt.get("vcodec") == "none"
+                and fmt.get("acodec") != "none"
+            ]
+            if not audio_formats:
+                logger.error(f"{id}: Failed, no audio formats found")
+                continue
+            # pick audio format with the highest bitrate
+            audio = max(audio_formats,key=lambda fmt: fmt.get("abr") or 0,)
+
+            transcript_urls[id] = {
+                "url": audio["url"],
+                "headers":audio.get("http_headers",{}),
+                "title": title,
+                "type": "audio"
+            }
+            logger.info(f"{id}: Success, yt_dlp returned audio url")
+
+
         status[id] = "done"
-        os.remove(path)
         logger.info(f"{id}: Done")
+        count += 1
 
         update_status(status)
-        with open(TRANSCRIPTS_FILE, "w", encoding="utf-8") as f:
-            json.dump(transcripts, f, indent = 4, ensure_ascii=False)
+        with open(TRANSCRIPT_URLS_FILE, "w", encoding="utf-8") as f:
+            json.dump(transcript_urls, f, indent = 4, ensure_ascii=False)
 
 def check_status(video_ids):
     """ returns status state for each video ID to prevent unnecessary work """
