@@ -40,8 +40,9 @@ YDL_OPTS = {
     "sleep_interval_requests": 2,
     "skip_download": True,
     "subtitlesformat": "vtt",
-    "quiet": True,
-    "proxy": "http://127.0.0.1:8080",
+    "quiet": True,  
+    "no_warnings": True,
+    "verbose": False
     # "cookiesfrombrowser": ("chrome",), (use this line instead of the one above if you are on chrome)
 }
 
@@ -179,7 +180,7 @@ def get_transcripts(videoIds, logger):
     transcript_urls = load_json(TRANSCRIPT_URLS_FILE, {})
     os.makedirs("data", exist_ok=True)
 
-    ids = deque(videoIds)
+    ids = deque(videoIds[:20])
     status = check_status(videoIds)
     count = 0
             
