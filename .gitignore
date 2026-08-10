@@ -42,7 +42,3 @@ status.json
 # Credentials
 credentials/
 *.json
-
-# cloud flare stuff
-cloudflare-worker
-python_test_script.py
