@@ -8,7 +8,10 @@
 
 ## Use
 
-Run the command python -m <relative path form current directory>.youtube "<search term>"
+1. First go project-perennual/development/backend/cloudflare-worker
+2. Run npm run deploy command to ensure cloudflare worker is ready to take requests
+3. Change directory to project-perennial/development/backend
+4. Run the command python -m src.api.youtube "<search term>"
 
 ## Outputs
 
