@@ -2,11 +2,8 @@ import os
 import json
 import googleapiclient.discovery
 import yt_dlp
-from faster_whisper import WhisperModel
-import glob
 import time
 import random
-import re
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
@@ -15,6 +12,7 @@ from src.utils.youtube_logger import create_logger
 from collections import deque
 from pathlib import Path
 import argparse
+from src.api.cloudflare import download_urls
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = BACKEND_DIR/"data"
@@ -126,32 +124,6 @@ def get_video_ids_and_metadata(keyword, logger):
 
     return videoIds
 
-def parse_vtt(path):
-    """ function to parse the transcript files returned by yt-dlp """
-    text = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            if line.isdigit():
-                continue
-            line = line.strip()
-            if not line or "-->" in line or "WEBVTT" in line:
-                continue
-            line = re.sub(r"<[^>]+>", "", line)
-            text.append(line)
-    return " ".join(text)
-
-# initialize whisper model for audio transcription
-model = WhisperModel(
-    "tiny",
-    device="cpu",
-    compute_type="int8"
-)
-
-def transcribe(audio_path):
-    """ uses whisper model to turn audio to text when no transcripts are available """
-    segments, _ = model.transcribe(audio_path)
-    return " ".join(seg.text for seg in segments)
-
 def load_json(path, default):
     """helper function to load json files"""
 
@@ -168,7 +140,7 @@ def load_json(path, default):
         
         return json.loads(content)
     
-def get_transcripts(videoIds, logger):
+def get_transcript_urls(videoIds, logger):
     """ 
     function that handles main logic of fetching transcript 
     yt_dlp will get metadata again for transcripts
@@ -180,9 +152,9 @@ def get_transcripts(videoIds, logger):
     transcript_urls = load_json(TRANSCRIPT_URLS_FILE, {})
     os.makedirs("data", exist_ok=True)
 
-    ids = deque(videoIds[:20])
+    ids = deque(videoIds[:5])
     status = check_status(videoIds)
-    count = 0
+    count = 1
             
     while ids:
         id = ids.popleft()
@@ -200,7 +172,6 @@ def get_transcripts(videoIds, logger):
 
         url = f"https://www.youtube.com/watch?v={id}"
         current_status = status[id]
-
 
         try:
             time.sleep(random.uniform(2+(4*int(current_status)), 5+(4*int(current_status))))
@@ -240,7 +211,6 @@ def get_transcripts(videoIds, logger):
         else:
             src_type = "audio"
 
-
         title = data.get(id,{}).get("title", "")
             
         if src_type == "text":
@@ -258,6 +228,7 @@ def get_transcripts(videoIds, logger):
                     "headers": track.get("http_headers", {}),
                     "title": title,
                     "type": "text",
+                    "ext": track.get("ext", "vtt"),
                 }
                 logger.info(f"{id}: Success, yt_dlp returned transcript url")
             else:
@@ -285,7 +256,8 @@ def get_transcripts(videoIds, logger):
                 "url": audio["url"],
                 "headers":audio.get("http_headers",{}),
                 "title": title,
-                "type": "audio"
+                "type": "audio",
+                "ext": audio.get("ext", "webm"),
             }
             logger.info(f"{id}: Success, yt_dlp returned audio url")
 
@@ -297,6 +269,8 @@ def get_transcripts(videoIds, logger):
         update_status(status)
         with open(TRANSCRIPT_URLS_FILE, "w", encoding="utf-8") as f:
             json.dump(transcript_urls, f, indent = 4, ensure_ascii=False)
+
+        return transcript_urls
 
 def check_status(video_ids):
     """ returns status state for each video ID to prevent unnecessary work """
@@ -340,7 +314,8 @@ def main():
   
     logger = create_logger(keyword+".log")
     videoIds = get_video_ids_and_metadata(f'"{keyword}"', logger)
-    get_transcripts(videoIds, logger)
+    url_objs = get_transcript_urls(videoIds, logger)
+    download_urls(url_objs, logger)
 
     return
 
