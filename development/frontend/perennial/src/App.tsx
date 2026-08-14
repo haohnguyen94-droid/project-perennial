@@ -12,6 +12,47 @@ import Settings from "./pages/Settings.tsx";
 import Watchlist from "./pages/Watchlist.tsx";
 import WhyCompany from "./pages/WhyCompany.tsx";
 
+const topics: string[] = [
+  "Technology",
+  "Healthcare",
+  "Financial Services",
+  "Consumer Discretionary",
+  "Consumer Staples",
+  "Energy",
+  "Industrials",
+  "Materials",
+  "Utilities",
+  "Real Estate",
+  "Communication Services",
+  "Automotive",
+  "Aerospace & Defense",
+  "Semiconductors",
+  "Software",
+  "Hardware",
+  "Artificial Intelligence",
+  "Cybersecurity",
+  "Cloud Computing",
+  "Biotechnology",
+  "Pharmaceuticals",
+  "Banking",
+  "Insurance",
+  "Investment Services",
+  "Retail",
+  "E-Commerce",
+  "Entertainment",
+  "Media",
+  "Telecommunications",
+  "Transportation",
+  "Logistics",
+  "Manufacturing",
+  "Construction",
+  "Mining",
+  "Oil & Gas",
+  "Renewable Energy",
+  "Food & Beverage",
+  "Travel & Hospitality",
+];
+
 function App() {
   return (
     <BrowserRouter>
@@ -19,7 +60,7 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
-        <Route path="/setup" element={<Setup />} />
+        <Route path="/setup" element={<Setup topics={topics} />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/insights" element={<Insights />} />
         <Route path="/watchlist" element={<Watchlist />} />
