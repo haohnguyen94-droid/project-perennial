@@ -1,7 +1,7 @@
 import "./App.css";
 
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Home from "./pages/Home.tsx";
+import Dashboard from "./pages/Dashboard.tsx";
 import Setup from "./pages/Setup.tsx";
 import Login from "./pages/Login.tsx";
 import Signup from "./pages/Signup.tsx";
@@ -11,6 +11,7 @@ import Profile from "./pages/Profile.tsx";
 import Settings from "./pages/Settings.tsx";
 import Watchlist from "./pages/Watchlist.tsx";
 import WhyCompany from "./pages/WhyCompany.tsx";
+import Confirmation from "./pages/Confirmation.tsx";
 
 const topics: string[] = [
   "Technology",
@@ -57,10 +58,11 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<Dashboard />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/setup" element={<Setup topics={topics} />} />
+        <Route path="/confirmation" element={<Confirmation />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/insights" element={<Insights />} />
         <Route path="/watchlist" element={<Watchlist />} />
