@@ -14,7 +14,11 @@ export default function Sidebar({ navigations }: SidebarProps) {
           key={n}
           value={n}
           onClick={(e) => {
-            navigate(`/${e.currentTarget.value}`);
+            if (e.currentTarget.value === "Home") {
+              navigate(`/`);
+            } else {
+              navigate(`/${e.currentTarget.value}`);
+            }
           }}
         >
           {n}
