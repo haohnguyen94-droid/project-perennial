@@ -15,7 +15,7 @@ export default function Dashboard() {
   const [content, setContent] = useState<string>("content");
   return (
     <div className="flex flex-col h-screen">
-      <div className="flex flex-row grow-1">
+      <div className="flex flex-row grow-1 border-b">
         <CompanyLogo />
         <div className="flex grow-10 justify-start items-center pl-5">
           <input
@@ -28,10 +28,8 @@ export default function Dashboard() {
         </div>
       </div>
       <div className="flex flex-row w-screen grow-20">
-        <div className="flex flex-col grow-2 justify-between items-center">
-          <Sidebar
-            navigations={["Home", "Watchlist", "Insight", "Settings"]}
-          ></Sidebar>
+        <div className="flex flex-col grow-2 justify-between items-center border-r">
+          <Sidebar navigations={["Home", "Watchlist", "Insight", "Settings"]} />
           <div className="flex flex-col items-center mb-10 gap-2">
             <button
               className="border rounded-full h-[5rem] w-[5rem] cursor-pointer"
@@ -44,7 +42,7 @@ export default function Dashboard() {
             <div> Profile </div>
           </div>
         </div>
-        <div className="flex flex-col grow-10">
+        <div className="flex flex-col grow-10 pt-5">
           <div className="flex flex-row justify-around">
             <button className="border rounded-md h-[3rem] w-[15rem] cursor-pointer hover:bg-sky-700">
               Affordable and Growing
