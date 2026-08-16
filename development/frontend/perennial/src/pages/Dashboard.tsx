@@ -29,7 +29,7 @@ export default function Dashboard() {
       </div>
       <div className="flex flex-row w-screen grow-20">
         <div className="flex flex-col grow-2 justify-between items-center border-r">
-          <Sidebar navigations={["Home", "Watchlist", "Insight", "Settings"]} />
+          <Sidebar navigations={["Watchlist", "Insight", "Settings"]} />
           <div className="flex flex-col items-center mb-10 gap-2">
             <button
               className="border rounded-full h-[5rem] w-[5rem] cursor-pointer"
