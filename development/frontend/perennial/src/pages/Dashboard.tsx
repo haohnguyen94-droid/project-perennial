@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import Sidebar from "../components/sidebar";
+import CompanyLogo from "../components/companyLogo";
 import { useState } from "react";
 
 function Search(
@@ -15,8 +16,7 @@ export default function Dashboard() {
   return (
     <div className="flex flex-col h-screen">
       <div className="flex flex-row grow-1">
-        <div className="flex grow-1 justify-center items-center">logo</div>
-        <div className="flex grow-1 justify-center items-center">Perennial</div>
+        <CompanyLogo />
         <div className="flex grow-10 justify-start items-center pl-5">
           <input
             type="text"
