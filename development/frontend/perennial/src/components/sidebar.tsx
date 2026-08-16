@@ -7,7 +7,7 @@ type SidebarProps = {
 export default function Sidebar({ navigations }: SidebarProps) {
   let navigate = useNavigate();
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col gap-10 mt-10 w-[80%] self-center">
       {navigations.map((n) => (
         <button
           className="border rounded-md h-15 cursor-pointer hover:bg-sky-700"
