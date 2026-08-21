@@ -19,8 +19,6 @@ import argparse
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = BACKEND_DIR/"data"
 DATA_DIR.mkdir(exist_ok=True)
-METADATA_FILE = DATA_DIR/"metadata.json"
-TRANSCRIPTS_FILE = DATA_DIR/"transcripts.json"
 STATUS_FILE = DATA_DIR/"status.json"
 
 ### compute the beginning of last month for video timeframes
@@ -41,7 +39,7 @@ COMMON_YDL_OPTS = {
     # "cookiesfrombrowser": ("chrome",), (use this line instead of the one above if you are on chrome)
 }
 
-def get_video_ids_and_metadata(keyword, logger):
+def get_video_ids_and_metadata(keyword, logger, metadata_file):
     """ given a keyword return list of objects from Youtube API that are related to the keyword """
     page_token = None
     results = []
@@ -76,7 +74,7 @@ def get_video_ids_and_metadata(keyword, logger):
         videoIds.append(item["id"]["videoId"])
         
     # get metadata from video IDs above
-    metadata = load_json(METADATA_FILE, {}) # dictionary with previously fetched metadata
+    metadata = load_json(metadata_file, {}) # dictionary with previously fetched metadata
         
     details: dict[str, dict] = {}
     for i in range(0, len(videoIds), 50):
@@ -115,7 +113,7 @@ def get_video_ids_and_metadata(keyword, logger):
         }
         logger.info(f"{videoId}: metadata success")
 
-    with open(METADATA_FILE, "w", encoding="utf-8") as f:
+    with open(metadata_file, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent = 4)
 
     return videoIds
@@ -162,7 +160,7 @@ def load_json(path, default):
         
         return json.loads(content)
     
-def get_transcripts(videoIds, logger):
+def get_transcripts(videoIds, logger, transcripts_file, metadata_file):
     """ 
     function that handles main logic of fetching transcript 
     yt_dlp will get metadata again for transcripts
@@ -170,8 +168,8 @@ def get_transcripts(videoIds, logger):
     therefore do any filtering of videos before calling this function
     this function should only be called on videoIDs we care about to save bandwidth
     """
-    data = load_json(METADATA_FILE, {})
-    transcripts = load_json(TRANSCRIPTS_FILE, {})
+    data = load_json(metadata_file, {})
+    transcripts = load_json(transcripts_file, {})
     os.makedirs("data", exist_ok=True)
 
     ids = deque()
@@ -189,7 +187,7 @@ def get_transcripts(videoIds, logger):
             continue
 
         logger.info(f"{id}: processing metadata")
-        print(f"Processing metadata {i+1}/{len(videoIds)}")
+        print(f"\rProcessing metadata {i+1}/{len(videoIds)}", end="", flush=True)
 
         # retrieve transcript metadata
         try:
@@ -218,6 +216,7 @@ def get_transcripts(videoIds, logger):
         else:
             transcript_metadata[id] = ("audio", None)
         ids.append(id)
+    print()
             
 
     # loop to fetch transcripts
@@ -249,6 +248,7 @@ def get_transcripts(videoIds, logger):
                 "subtitleslangs": [transcript_metadata[id][1]],
                 "outtmpl": f"data/{id}.%(ext)s",
                 "quiet": True,
+                "no_warnings": True
             }
             src_type = "text"
         elif transcript_metadata[id][0] == "automatic":
@@ -327,7 +327,7 @@ def get_transcripts(videoIds, logger):
         logger.info(f"{id}: Done")
 
         update_status(status)
-        with open(TRANSCRIPTS_FILE, "w", encoding="utf-8") as f:
+        with open(transcripts_file, "w", encoding="utf-8") as f:
             json.dump(transcripts, f, indent = 4, ensure_ascii=False)
 
 def check_status(video_ids):
@@ -371,8 +371,10 @@ def main():
     print(f"Searching for: {keyword}")
   
     logger = create_logger(keyword+".log")
-    videoIds = get_video_ids_and_metadata(f'"{keyword}"', logger)
-    get_transcripts(videoIds, logger)
+    transcripts_file = f"{DATA_DIR}/{keyword}_transcripts.json"
+    metadata_file = f"{DATA_DIR}/{keyword}_metadata.json"
+    videoIds = get_video_ids_and_metadata(f'"{keyword}"', logger, metadata_file)
+    get_transcripts(videoIds, logger, transcripts_file, metadata_file)
 
     return
 
