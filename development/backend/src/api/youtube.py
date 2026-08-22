@@ -192,7 +192,6 @@ def get_transcripts(videoIds, logger, transcripts_file, metadata_file):
         # retrieve transcript metadata
         try:
             with yt_dlp.YoutubeDL(COMMON_YDL_OPTS) as ydl:
-                time.sleep(random.uniform(3, 10))
                 info = ydl.extract_info(url, download=False)
             logger.info(f"{id}: yt_dlp metadata success")
         except Exception as e:
