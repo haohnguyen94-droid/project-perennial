@@ -1,0 +1,23 @@
+# Local dev Postgres — matches prod engine (PG 16, ADR-003).
+# Usage:  docker compose up -d   (from development/)
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: perennial
+      POSTGRES_PASSWORD: perennial   # local only; prod creds live in Railway
+      POSTGRES_DB: perennial
+    ports:
+      # Host port 5433: a natively installed PostgreSQL often owns 5432 and
+      # silently shadows the container (it did on Bryan's machine).
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U perennial -d perennial"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
