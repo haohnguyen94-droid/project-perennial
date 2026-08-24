@@ -295,23 +295,50 @@ the invariant matters more than the enforcement mechanism.**
 
 ---
 
-## 6. Production (Railway)
+## 6. Production (Neon — provisioned 2026-08-24)
 
-1. Provision **Railway managed Postgres 16** in the same project as the
-   FastAPI service (overview §4 topology).
-2. Verify extension availability (`citext`, `pg_trgm`) — expected fine on
-   Railway's stock image; check before first deploy, not during it.
-3. Set `DATABASE_URL` (or the two role URLs per §5) in Railway service env;
-   Alembic runs `upgrade head` as a **release step** before the new app
-   version serves traffic. Never auto-migrate on app import — a crashed
-   half-migration should block deploy, not take down a running server.
-4. Backups: Railway managed daily backups, **plus** a weekly `pg_dump` to a
-   team-accessible location. *Reasoning:* ADR-003 names `pg_dump` as the whole
-   DR plan; a dump we've actually restored once is a plan, a dump we've never
-   restored is a hope. Do one restore drill before user testing.
-5. **No staging DB** (overview §4: no staging environment at demo scale).
-   The seam: everything is env-var configured, so adding one later is a
-   Railway click.
+> **Reality supersedes the original plan here.** overview.md §4 proposed
+> Railway for compute + DB; Railway's free plan turned out to block resource
+> provisioning entirely, and the team chose **Neon's free tier** for the
+> database instead (hosting was always the cheap-to-reverse decision).
+> Compute hosting is still open — decided when the API actually deploys;
+> Railway/Render remain candidates, and moving this DB anywhere later is a
+> `pg_dump` restore.
+
+**What exists:**
+
+| | |
+|---|---|
+| Project | `perennial` (id `floral-dew-49584719`), org: Bryan's personal Neon org |
+| Engine | PostgreSQL **16.15** (same minor as local Docker), aws-us-east-1 |
+| Schema | Migration 001 applied (`alembic_version` = `e12d2abbc333`); `citext` + `pg_trgm` confirmed |
+| Credentials | Connection string in the Neon console (Dashboard → project → Connect). **Never committed, never pasted in Discord.** Rotate from the console if ever exposed. |
+
+**Free-tier characteristics to know (they shape operations):**
+
+1. **Compute autosuspends when idle** — the first query after a quiet period
+   takes ~1s extra while it wakes. Fine at demo scale; don't mistake it for
+   an outage. (The hourly pipeline will keep it warm during the day anyway.)
+2. **512 MB logical size limit** — plenty for 150 tickers (~tens of MB), but
+   it makes the `raw_documents` body-truncation + 90-day retention rules
+   (§8) *mandatory hygiene*, not nice-to-haves.
+3. **~6h point-in-time history on free tier** — so the **weekly `pg_dump` to
+   a team-accessible location is the real backup**, and one restore drill
+   before user testing is non-negotiable (a dump we've restored once is a
+   plan; one we've never restored is a hope).
+
+**Rules that stand regardless of host:**
+
+- Alembic runs `upgrade head` as a **release step** before new app code
+  serves traffic — never auto-migrate on app import.
+- Nobody develops against the prod URL; local Docker is for development,
+  prod is written to by the deployed pipeline and by migrations only.
+- Teammate access: invite via Neon console (org → People) so everyone uses
+  their own login; the connection string itself goes only into deploy-time
+  env stores.
+- **No staging DB** (overview §4) — env-var config means adding one later is
+  a Neon branch, which is actually *easier* than the Railway click the plan
+  assumed.
 
 ---
 
@@ -451,3 +478,25 @@ pointing at it — as a deploy/release step, never on app startup.
 
 **Next action:** SQLAlchemy models for the created tables, then the
 fetcher-to-Postgres swap (start with `ark.py` — no API key required).
+
+### Session 4 — production database provisioned on Neon (2026-08-24)
+
+1. **Railway attempted first** (CLI installed, Bryan authenticated) —
+   project creation failed: *"Free plan resource provision limit exceeded."*
+   Team decision: **Neon free tier** for the DB now; compute platform
+   deferred until the API exists (options table discussed: Neon / Supabase /
+   Render / GitHub Student Pack credits).
+2. **Neon provisioned via CLI** (`neonctl`): project `perennial`, explicitly
+   pinned `--pg-version 16` for local/prod parity → got 16.15, matching the
+   local container exactly.
+3. **Migration 001 applied to prod** (`alembic upgrade head` with
+   `DATABASE_URL` pointed at Neon) and verified with `check_db.py`
+   (new read-only script in `development/backend/`): 9 tables +
+   `alembic_version` at `e12d2abbc333`, `citext` + `pg_trgm` installed.
+4. §6 above rewritten from the Railway plan to the Neon reality.
+   overview.md §4's topology diagram still says Railway — flag for the next
+   docs pass rather than rewriting the architecture docs unilaterally.
+
+**Next actions unchanged** (models → fetcher swap), plus: invite teammates
+in the Neon console, and claim the GitHub Student Developer Pack before
+committing to a compute platform.
