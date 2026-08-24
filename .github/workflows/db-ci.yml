@@ -1,0 +1,50 @@
+# Migration reversibility gate (database/migrations/TODO.md: "every migration
+# reversible, both directions tested"). The re-upgrade at the end catches
+# downgrades that "succeed" by dropping too much.
+name: db-ci
+
+on:
+  pull_request:
+    paths:
+      - "development/backend/**"
+      - ".github/workflows/db-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "development/backend/**"
+      - ".github/workflows/db-ci.yml"
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: perennial
+          POSTGRES_PASSWORD: perennial
+          POSTGRES_DB: perennial
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U perennial -d perennial"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://perennial:perennial@localhost:5432/perennial
+    defaults:
+      run:
+        working-directory: development/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install DB tooling
+        run: pip install -r requirements-db.txt
+      - name: Upgrade → downgrade → re-upgrade
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
