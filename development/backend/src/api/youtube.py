@@ -21,10 +21,10 @@ DATA_DIR = BACKEND_DIR/"data"
 DATA_DIR.mkdir(exist_ok=True)
 STATUS_FILE = DATA_DIR/"status.json"
 
-### compute the beginning of last month for video timeframes
+### compute the date for a week ago for video timeframes
 now = datetime.now(timezone.utc)
 published_after = (
-    now.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - relativedelta(months=1)
+    now - relativedelta(weeks=1)
 ).strftime("%Y-%m-%dT%H:%M:%SZ")
 ###
 
@@ -171,6 +171,8 @@ def get_transcripts(videoIds, logger, transcripts_file, metadata_file):
     data = load_json(metadata_file, {})
     transcripts = load_json(transcripts_file, {})
     os.makedirs("data", exist_ok=True)
+    success, fail = 0, 0
+    mins = 20
 
     ids = deque()
     transcript_metadata = {}
@@ -221,6 +223,13 @@ def get_transcripts(videoIds, logger, transcripts_file, metadata_file):
     # loop to fetch transcripts
     logger.info("Starting transcript gathering")
     while ids:
+        # if ratio of success to failure reaches 1:1 sleep, then reset counters and increase next sleep interval
+        if fail > 0 and success > 0 and fail >= success:
+            logger.info(f"sleeping for {mins} minutes")
+            time.sleep(60*mins)
+            success, fail = 0,0
+            mins += 5
+
         id = ids.popleft()
         current_status = status[id]
         
@@ -280,10 +289,11 @@ def get_transcripts(videoIds, logger, transcripts_file, metadata_file):
                 logger.warning(f"{id}: could not remove stale file {old_path}")
         
         try:
-            time.sleep(random.uniform(2+(4*int(current_status)), 5+(4*int(current_status))))
+            time.sleep(random.uniform(4,7))
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
         except DownloadError as e:
+            fail += 1
             if "429" in str(e) or "Too Many Requests" in str(e):
                 logger.warning(f"{id}: Failed, Rate limited by API, retrying later")
                 ids.append(id)
@@ -292,6 +302,7 @@ def get_transcripts(videoIds, logger, transcripts_file, metadata_file):
                 logger.error(f"{id}: Failed, download error")
                 continue
         except Exception as e:
+            fail += 1
             logger.error(f"{id}: Failed, unknown error: {e}")
             continue
             
@@ -324,6 +335,7 @@ def get_transcripts(videoIds, logger, transcripts_file, metadata_file):
         status[id] = "done"
         os.remove(path)
         logger.info(f"{id}: Done")
+        success += 1
 
         update_status(status)
         with open(transcripts_file, "w", encoding="utf-8") as f:
