@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 from yt_dlp.utils import DownloadError
-from src.utils.youtube_logger import create_logger
+from development.backend.src.utils.logger import create_logger
 from collections import deque
 from pathlib import Path
 import argparse

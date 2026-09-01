@@ -1,7 +1,7 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.client import Client
-from src.utils.youtube_logger import create_logger
+from development.backend.src.utils.logger import create_logger
 from pathlib import Path
 import json
 import os

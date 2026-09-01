@@ -1,11 +1,13 @@
 import argparse
-from src.utils.youtube_logger import create_logger
+from src.utils.logger import create_logger
 from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, parse_qs
 import base64
 import binascii
+import trafilatura
+import json
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = BACKEND_DIR/"data"
@@ -98,12 +100,42 @@ def get_top_urls(phrase: str, logger):
             break
     return results
 
-def handle_urls(url_list, filepath, logger):
-    for url in url_list:
-        # visit url and parse out the information and save to filepath
-        continue
+def extract_content(url):
+    response = requests.get(
+        url,
+        timeout=15,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (compatible; PerennialBot/1.0; "
+                "+https://your-domain.com/bot)"
+            )
+        },
+    )
+    response.raise_for_status()
 
-    return
+    return trafilatura.extract(
+        response.text,
+        url=url,
+        include_comments=False,
+        include_tables=True,
+        favor_precision=True,
+    )
+
+def handle_urls(url_list, filepath, logger):
+    data = {}
+    for url in url_list:
+        try:
+            logger.info(f"extracted {url}")
+            content = extract_content(url)
+            data[url] = content
+        except requests.HTTPError as error:
+            status = error.response.status_code if error.response else "unknown"
+            logger.warning(
+                f"Skipping URL after HTTP {status}: {url}"
+            )
+
+    with open(filepath, 'w') as f:
+        json.dump(data, f, indent = 4)
 
 def main():
     parser = argparse.ArgumentParser(description="Return top data from search results from a web engine given search term.")
@@ -115,16 +147,15 @@ def main():
     phrase = args.phrase
     print(f"Searching for: {phrase}")
 
-    search_result_file = f"{DATA_DIR}/{phrase}_results.json"
+    search_result_file = f"{DATA_DIR}/{phrase}_search_results.json"
     
-    logger = create_logger(phrase+".log")
+    logger = create_logger(f"{phrase}_search.log")
     url_list = get_top_urls(phrase, logger)
 
     if not url_list:
         logger.warning("No valid URLs found")
         return
     
-    print(url_list)
     handle_urls(url_list, search_result_file, logger)
     
     return

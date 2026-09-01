@@ -1,6 +1,9 @@
 import logging
+from pathlib import Path
 
-import logging
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+LOG_DIR = BACKEND_DIR/"logs"
+LOG_DIR.mkdir(exist_ok=True)
 
 def create_logger(log_file):
     logger = logging.getLogger("youtube")
@@ -14,7 +17,7 @@ def create_logger(log_file):
         "%(asctime)s [%(levelname)s] %(message)s"
     )
 
-    handler = logging.FileHandler(log_file, encoding="utf-8")
+    handler = logging.FileHandler(f"logs/{log_file}", encoding="utf-8")
     handler.setFormatter(formatter)
 
     logger.addHandler(handler)
